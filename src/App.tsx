@@ -54,7 +54,7 @@ function App() {
   // 获取回话列表
   const fetchSessions = async (options?: { resetActive?: boolean }) => {
     try {
-      const res = await fetch("http://127.0.0.1:5000/session/list")
+      const res = await fetch("https://ai-chat-backend-xkhp.onrender.com/session/list")
       if (!res.ok) {
         throw new Error("获取会话列表失败")
       }
@@ -77,7 +77,7 @@ function App() {
   const fetchSessionMessages = async (sessionId: string) => {
     if (!sessionId) return
     try {
-      const res = await fetch(`http://127.0.0.1:5000/session/${sessionId}/messages`)
+      const res = await fetch(`https://ai-chat-backend-xkhp.onrender.com/session/${sessionId}/messages`)
       if (!res.ok) {
         throw new Error("获取会话消息失败")
       }
@@ -92,7 +92,7 @@ function App() {
     }
   }
   const createRealSession = async () => {
-    const res = await fetch("http://127.0.0.1:5000/session/create", {
+    const res = await fetch("https://ai-chat-backend-xkhp.onrender.com/session/create", {
       method: "POST"
     })
 
@@ -132,7 +132,7 @@ function App() {
   const handleDeleteSession = async (sessionId: string) => {
     if (!confirm("确定删除这个会话吗？")) return
     try {
-      const res = await fetch(`http://127.0.0.1:5000/session/${sessionId}`, {
+      const res = await fetch(`https://ai-chat-backend-xkhp.onrender.com/session/${sessionId}`, {
         method: "DELETE"
       })
       if (!res.ok) {
@@ -239,7 +239,7 @@ function App() {
     abortControllerRef.current = controller
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/chat_stream", {
+      const res = await fetch("https://ai-chat-backend-xkhp.onrender.com/chat_stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
