@@ -1,280 +1,54 @@
-import {useEffect, useRef, useState} from 'react'
-import {readStream} from "./utils/stream.ts";
 import SessionSidebar from "./components/SessionSidebar";
 import ChatWindow from "./components/ChatWindow.tsx";
 import MessageInput from "./components/MessageInput.tsx";
-import {
-  createSessionApi,
-  deleteSessionApi,
-  getSessionMessageApi,
-  getSessionsListApi,
-  sendMessageApi
-} from "./api/chatApi.ts";
 
-
-type ChatItem = {
-  id?: number
-  role: "user" | "assistant"
-  content: string
-  created_at?: number
-}
-type SessionItem = {
-  session_id: string
-  title: string,
-  created_at: number
-  updated_at: number
-}
+import {useAutoScroll} from "./hooks/useAutoScroll.ts";
+import {useSessions} from "./hooks/useSessions.ts";
+import {useChatSend} from "./hooks/useChatSend.ts";
+import {useState} from "react";
 
 
 function App() {
-  const [sessions, setSessions] = useState<SessionItem[]>([])
-  const [activeSessionId, setActiveSessionId] = useState("")
-
-  const [chatMap, setChatMap] = useState<Record<string, ChatItem[]>>({})
   const [message, setMessage] = useState("")
-  const chatList = chatMap[activeSessionId] || []
-  const [loading, setLoading] = useState(false)
-  // 流失请求中断
-  const abortControllerRef = useRef<AbortController | null>(null)
 
-  // 1. 聊天列表容器的 ref
-  const chatBoxRef = useRef<HTMLDivElement | null>(null)
+  const {
+    sessions,
+    setSessions,
+    activeSessionId,
+    setActiveSessionId,
+    chatMap,
+    chatList,
+    updateSessionMessages,
+    fetchSessions,
+    createRealSession,
+    handleCreateSession,
+    handleSelectSession,
+    handleDeleteSession,
+    moveSessionToTop,
+    insertEmptySessionMessages
+  } = useSessions()
 
-  useEffect(() => {
-    if (chatBoxRef.current) {
-      chatBoxRef.current.scrollTo({
-        top: chatBoxRef.current.scrollHeight,
-        behavior: "smooth"
-      })
-    }
-  }, [chatList, loading])
+  const {
+    loading,
+    handleSend,
+    handleStop
+  } = useChatSend({
+    message,
+    setMessage,
+    activeSessionId,
+    setActiveSessionId,
+    chatMap,
+    setSessions,
+    createRealSession,
+    insertEmptySessionMessages,
+    updateSessionMessages,
+    moveSessionToTop,
+    fetchSessions
+  })
 
-  // 更新当前会话消息
-  const updateSessionMessages = (
-    sessionId: string,
-    updater: (prev: ChatItem[]) => ChatItem[]
-  ) => {
-    setChatMap((prev) => ({
-      ...prev,
-      [sessionId]: updater(prev[sessionId] || [])
-    }))
-  }
-  // 获取回话列表
-  const fetchSessions = async (options?: { resetActive?: boolean }) => {
-    try {
-      const data = await getSessionsListApi()
-      const sessionList: SessionItem[] = data.sessions || []
-      setSessions(sessionList)
-      if (options?.resetActive && sessionList.length > 0) {
-        const firstSessionId = sessionList[0].session_id
-        setActiveSessionId(firstSessionId)
-        fetchSessionMessages(firstSessionId)
-      }
-    } catch (error) {
-      console.error(error)
-    }
-  }
-  useEffect(() => {
-    fetchSessions({resetActive: true})
-  }, [])
+  // 聊天列表容器的 ref
+  const chatBoxRef = useAutoScroll([chatList, loading])
 
-  const fetchSessionMessages = async (sessionId: string) => {
-    if (!sessionId) return
-    try {
-      const data = await getSessionMessageApi(sessionId)
-
-      const messages = data.messages || []
-      setChatMap((prev) => ({
-        ...prev,
-        [sessionId]: messages
-      }))
-    } catch (error) {
-      console.error(error)
-    }
-  }
-  const createRealSession = async () => {
-    return await createSessionApi()
-  }
-
-  // 新建会话
-  const handleCreateSession = async () => {
-    try {
-      const newSession = await createRealSession()
-      // 更新左边列表
-      setSessions((prev) => [newSession, ...prev])
-      // 切换到新会话
-      setActiveSessionId(newSession.session_id)
-      // 初始化空消息
-      setChatMap((prev) => ({
-        ...prev,
-        [newSession.session_id]: []
-      }))
-    } catch (error) {
-      console.error(error)
-    }
-  }
-  // 选择会话
-  const handleSelectSession = (sessionId: string) => {
-    setActiveSessionId(sessionId)
-
-    if (!chatMap[sessionId]) {
-      fetchSessionMessages(sessionId)
-    }
-  }
-  // 删除会话
-  const handleDeleteSession = async (sessionId: string) => {
-    if (!confirm("确定删除这个会话吗？")) return
-    try {
-      await deleteSessionApi(sessionId)
-
-      // 更新左边列表
-      const nextSessions = sessions.filter((item) => item.session_id !== sessionId)
-      setSessions(nextSessions)
-      // 初始化空消息
-      setChatMap((prev) => {
-        const newMap = {...prev}
-        delete newMap[sessionId]
-        return newMap
-      })
-      // 切换到新会话
-      if (activeSessionId === sessionId) {
-        if (nextSessions.length > 0) {
-          const nextSessionId = nextSessions[0].session_id
-          setActiveSessionId(nextSessionId)
-          if (!chatMap[nextSessionId]) {
-            fetchSessionMessages(nextSessionId)
-          }
-        } else {
-          setActiveSessionId("")
-        }
-      }
-    } catch (error) {
-      console.error(error)
-    }
-  }
-  // 移动会话到顶部，可选更新标题
-  const moveSessionToTop = (sessionId: string, newTitle?: string) => {
-    setSessions((prev) => {
-      const target = prev.find((item) => item.session_id === sessionId)
-      if (!target) return prev
-
-      const updated = {
-        ...target,
-        updated_at: Date.now(),
-        ...(newTitle ? {title: newTitle} : {})
-      }
-
-      return [
-        updated,
-        ...prev.filter((item) => item.session_id !== sessionId)
-      ]
-    })
-  }
-  const isAbortRef = useRef(false)
-
-  const handleStop = () => {
-    isAbortRef.current = true
-    abortControllerRef.current?.abort()
-    abortControllerRef.current = null
-    setLoading(false)
-  }
-  const handleSend = async () => {
-    if (!message.trim()) return
-    let currentSessionId = activeSessionId
-
-    if (!currentSessionId) {
-      const realSession = await createRealSession()
-      currentSessionId = realSession.session_id
-
-      setSessions((prev) => [realSession, ...prev])
-      setActiveSessionId(currentSessionId)
-
-      setChatMap((prev) => ({
-        ...prev,
-        [currentSessionId]: []
-      }))
-    }
-    const currentMessage = message
-    const oldMessages = chatMap[currentSessionId] || []
-    const isFirstMessage = oldMessages.length === 0
-    moveSessionToTop(currentSessionId, isFirstMessage ? currentMessage.slice(0, 12) : undefined)
-
-    const baseId = Date.now()
-    const userMessage: ChatItem = {
-      id: baseId,
-      role: 'user',
-      content: currentMessage
-    }
-    const assistantMessageId = baseId + 1
-
-    const assistantPlaceholder: ChatItem = {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '正在思考中...'
-    }
-    // 一次性先插入：用户消息 + AI占位消息
-    updateSessionMessages(currentSessionId, (prev) => [
-      ...prev,
-      userMessage,
-      assistantPlaceholder
-    ])
-    // 清空输入框
-    setMessage("")
-    setLoading(true)
-
-    isAbortRef.current = false
-
-    const controller = new AbortController()
-    abortControllerRef.current = controller
-    try {
-      const res = await sendMessageApi({
-        sessionId: currentSessionId,
-        prompt: currentMessage,
-        signal: controller.signal
-      })
-
-      await readStream(
-        res,
-        (data) => {
-          if (data.content) {
-            updateSessionMessages(currentSessionId, (prev) =>
-              prev.map((item) =>
-                item.id === assistantMessageId
-                  ? {...item, content: data.content}
-                  : item
-              )
-            )
-          }
-        },
-        () => {
-          fetchSessions({resetActive: false})
-        },
-        () => {
-          if (isAbortRef.current) {
-            updateSessionMessages(currentSessionId, (prev) =>
-              prev.map((item) =>
-                item.id === assistantMessageId
-                  ? {...item, content: item.content === "正在思考中..." ? "已停止生成" : item.content}
-                  : item
-              )
-            )
-            return
-          }
-          updateSessionMessages(currentSessionId, (prev) =>
-            prev.map((item) =>
-              item.id === assistantMessageId
-                ? {...item, content: "请求失败，请检查后端服务"}
-                : item
-            )
-          )
-        }
-      )
-    }
-    finally {
-      abortControllerRef.current = null
-      setLoading(false)
-    }
-  }
 
   return (
     <div style={{display: "flex", height: "100vh"}}>
