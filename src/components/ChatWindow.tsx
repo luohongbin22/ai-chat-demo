@@ -1,3 +1,5 @@
+import MarkdownMessage from "./MarkdownMessage.tsx";
+
 type ChatItem = {
   id?: number
   role: "user" | "assistant"
@@ -69,7 +71,7 @@ function ChatWindow({ chatList }: ChatWindowProps) {
                   whiteSpace: "pre-wrap"
                 }}
               >
-                {item.content}
+                <MarkdownMessage content={item.content} />
               </div>
 
               {/* 用户头像 */}

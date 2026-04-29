@@ -3,8 +3,14 @@ import {readStream} from "./utils/stream.ts";
 import SessionSidebar from "./components/SessionSidebar";
 import ChatWindow from "./components/ChatWindow.tsx";
 import MessageInput from "./components/MessageInput.tsx";
+import {
+  createSessionApi,
+  deleteSessionApi,
+  getSessionMessageApi,
+  getSessionsListApi,
+  sendMessageApi
+} from "./api/chatApi.ts";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 type ChatItem = {
   id?: number
@@ -56,11 +62,7 @@ function App() {
   // 获取回话列表
   const fetchSessions = async (options?: { resetActive?: boolean }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/session/list`)
-      if (!res.ok) {
-        throw new Error("获取会话列表失败")
-      }
-      const data = await res.json()
+      const data = await getSessionsListApi()
       const sessionList: SessionItem[] = data.sessions || []
       setSessions(sessionList)
       if (options?.resetActive && sessionList.length > 0) {
@@ -79,12 +81,9 @@ function App() {
   const fetchSessionMessages = async (sessionId: string) => {
     if (!sessionId) return
     try {
-      const res = await fetch(`${API_BASE_URL}/session/${sessionId}/messages`)
-      if (!res.ok) {
-        throw new Error("获取会话消息失败")
-      }
-      const data = await res.json()
-      const messages: ChatItem[] = data.messages || []
+      const data = await getSessionMessageApi(sessionId)
+
+      const messages = data.messages || []
       setChatMap((prev) => ({
         ...prev,
         [sessionId]: messages
@@ -94,15 +93,7 @@ function App() {
     }
   }
   const createRealSession = async () => {
-    const res = await fetch(`${API_BASE_URL}/session/create`, {
-      method: "POST"
-    })
-
-    if (!res.ok) {
-      throw new Error("创建会话失败")
-    }
-
-    return await res.json()
+    return await createSessionApi()
   }
 
   // 新建会话
@@ -134,12 +125,8 @@ function App() {
   const handleDeleteSession = async (sessionId: string) => {
     if (!confirm("确定删除这个会话吗？")) return
     try {
-      const res = await fetch(`${API_BASE_URL}/session/${sessionId}`, {
-        method: "DELETE"
-      })
-      if (!res.ok) {
-        throw new Error("删除会话失败")
-      }
+      await deleteSessionApi(sessionId)
+
       // 更新左边列表
       const nextSessions = sessions.filter((item) => item.session_id !== sessionId)
       setSessions(nextSessions)
@@ -239,20 +226,12 @@ function App() {
 
     const controller = new AbortController()
     abortControllerRef.current = controller
-
     try {
-      const res = await fetch(`${API_BASE_URL}/chat_stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          session_id: currentSessionId,
-          message: currentMessage
-        })
+      const res = await sendMessageApi({
+        sessionId: currentSessionId,
+        prompt: currentMessage,
+        signal: controller.signal
       })
-      if (!res.ok) throw new Error("请求失败")
 
       await readStream(
         res,
@@ -290,7 +269,8 @@ function App() {
           )
         }
       )
-    } finally {
+    }
+    finally {
       abortControllerRef.current = null
       setLoading(false)
     }
